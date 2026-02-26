@@ -92,7 +92,6 @@ function render(element, container) {
   }
 
   for (const key in element.props) {
-    console.log('赋值key - ', key);
 
     if (key !== 'children') {
       realNode[key] = element.props[key];
