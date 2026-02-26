@@ -82,6 +82,26 @@ function createTextElement(text) {
  */
 function render(element, container) {
   // TODO: 你的代码实现
+  let realNode = {};
+  if (element.type === "TEXT_ELEMENT") {
+    realNode = document.createTextNode("")
+  } else {
+    realNode = document.createElement(element.type)
+  }
+
+  for (key in element.props) {
+    if (key !== 'children') {
+      realNode[key] = element.props[key];
+    }
+  }
+
+  if (element.props.children.length) {
+    element.props.children.forEach(c => {
+      render(c, realNode);
+    })
+  }
+
+  container.append(realNode);
 }
 
 // 导出我们的 React 实现
