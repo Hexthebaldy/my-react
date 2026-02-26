@@ -44,7 +44,7 @@ function createElement(type, props, ...children) {
       node.props.children.push(c);
     }
   })
-
+  console.log('创造了VDOM: ', node);
   return node;
 }
 
@@ -81,6 +81,8 @@ function createTextElement(text) {
  * - 递归渲染是关键
  */
 function render(element, container) {
+  console.log('待挂载VDOM: ', element);
+  console.log('挂载容器: ', container);
   // TODO: 你的代码实现
   let realNode = {};
   if (element.type === "TEXT_ELEMENT") {
@@ -89,7 +91,9 @@ function render(element, container) {
     realNode = document.createElement(element.type)
   }
 
-  for (key in element.props) {
+  for (const key in element.props) {
+    console.log('赋值key - ', key);
+
     if (key !== 'children') {
       realNode[key] = element.props[key];
     }

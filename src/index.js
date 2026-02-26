@@ -47,3 +47,11 @@ function mountApp() {
 
 // 启动应用
 mountApp();
+
+
+let p1 = "Using original js to create dom tree";
+let p2 = "I'm too old school ...";
+let element = myReact.createElement("div", { id: "114514_beast_senpai" }, p1, p2);
+
+let root = document.getElementById("root");
+myReact.render(element, root);
