@@ -29,6 +29,23 @@
  */
 function createElement(type, props, ...children) {
   // TODO: 你的代码实现
+  let node = {};
+
+  node["type"] = type;
+  node["props"] = {
+    ...props,
+    children: []
+  };
+
+  children.forEach(c => {
+    if (typeof c !== 'object') {
+      node.props.children.push(createTextElement(c));
+    } else {
+      node.props.children.push(c);
+    }
+  })
+
+  return node;
 }
 
 /**
@@ -40,7 +57,13 @@ function createElement(type, props, ...children) {
  */
 function createTextElement(text) {
   // TODO: 你的代码实现
-
+  return {
+    "type": "TEXT_ELEMENT",
+    "props": {
+      "nodeValue": text,
+      "children": []
+    }
+  }
 }
 
 /**
