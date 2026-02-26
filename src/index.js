@@ -49,9 +49,15 @@ function mountApp() {
 mountApp();
 
 
-let p1 = "Using original js to create dom tree";
-let p2 = "I'm too old school ...";
-let element = myReact.createElement("div", { id: "114514_beast_senpai" }, p1, p2);
+// let p1 = "Using original js to create dom tree";
+// let p2 = "I'm too old school ...";
+// let element = myReact.createElement("div", { id: "114514_beast_senpai" }, p1, p2);
+
+let element = (
+  <div id="114514_beast_senpai">
+    <p>Using jsx to create dom tree</p><p>I'm too new wave ...</p>
+  </div>
+)
 
 let root = document.getElementById("root");
 myReact.render(element, root);
