@@ -78,7 +78,9 @@ function workLoop(deadline) {
       shouldStop = true
     }
   }
-
+  if (!nextUnitOfWork && wipRoot) {
+    commitRoot();
+  }
   requestIdleCallback(workLoop);
 }
 
@@ -162,7 +164,7 @@ function performUnitOfWork(fiber) {
 function createDom(fiber) {
   // TODO: 你的代码实现
   let node = fiber.type === "TEXT_ELEMENT" ?
-    document.createTextElement("") :
+    document.createTextNode("") :
     document.createElement(fiber.type);
 
   for (let key in fiber.props) {
@@ -181,6 +183,8 @@ function createDom(fiber) {
  */
 function commitRoot() {
   // TODO: 你的代码实现
+  commitWork(wipRoot.child);
+  wipRoot = null;
 }
 
 /**
@@ -189,6 +193,15 @@ function commitRoot() {
  */
 function commitWork(fiber) {
   // TODO: 你的代码实现
+  if (!fiber) {
+    return;
+  }
+  if (fiber.parent) {
+    fiber.parent.dom.append(fiber.dom);
+  }
+
+  commitWork(fiber.child);
+  commitWork(fiber.sibling);
 }
 
 // 导出我们的 React 实现
