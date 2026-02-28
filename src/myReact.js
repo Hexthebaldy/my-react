@@ -44,7 +44,6 @@ function createElement(type, props, ...children) {
       node.props.children.push(c);
     }
   })
-  console.log('创造了VDOM: ', node);
   return node;
 }
 
@@ -66,51 +65,133 @@ function createTextElement(text) {
   }
 }
 
-/**
- * 任务 3: 实现 render 函数
- * 功能：将虚拟 DOM 转换为真实 DOM 并挂载到容器中
- *
- * 步骤：
- * 1. 根据虚拟 DOM 类型创建真实 DOM 节点（document.createElement 或 document.createTextNode）
- * 2. 处理属性：将虚拟 DOM props 赋值到真实 DOM 上
- * 3. 递归处理所有子节点
- * 4. 将节点添加到容器中
- *
- * 注意：
- * - 需要过滤掉 children 属性（因为它不是 DOM 属性）
- * - 递归渲染是关键
- */
-function render(element, container) {
-  console.log('待挂载VDOM: ', element);
-  console.log('挂载容器: ', container);
+let nextUnitOfWork = null;
+let wipRoot = null;
+
+function workLoop(deadline) {
   // TODO: 你的代码实现
-  let realNode = {};
-  if (element.type === "TEXT_ELEMENT") {
-    realNode = document.createTextNode("")
-  } else {
-    realNode = document.createElement(element.type)
-  }
+  let shouldStop = false;
+  while (!shouldStop && nextUnitOfWork) {
+    nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
 
-  for (const key in element.props) {
-
-    if (key !== 'children') {
-      realNode[key] = element.props[key];
+    if (deadline.timeRemaining() < 1) {
+      shouldStop = true
     }
   }
 
-  if (element.props.children.length) {
-    element.props.children.forEach(c => {
-      render(c, realNode);
-    })
+  requestIdleCallback(workLoop);
+}
+
+// 启动调度器
+requestIdleCallback(workLoop);
+
+// =============== Step 4：Fibers（构建 fiber tree） ===============
+
+// wipRoot：work in progress root（正在构建的 fiber 树根）
+
+/**
+ * 任务 3: 实现 render 函数（Step 3）
+ * 功能：初始化 fiber 树并启动调度
+ */
+function render(element, container) {
+  // TODO: 你的代码实现
+  wipRoot = {
+    dom: container,
+    props: { children: [element] },
+    child: null,
+    sibling: null,
+    parent: null
+  };
+
+  nextUnitOfWork = wipRoot;
+}
+
+/**
+ * 任务 4: 实现 performUnitOfWork（Step 4）
+ * 功能：处理一个 fiber 单元，返回下一个工作单元
+ */
+function performUnitOfWork(fiber) {
+  // TODO: 你的代码实现
+  if (!fiber.dom) {
+    fiber.dom = createDom(fiber);
+  }
+  if (fiber.props.children.length && !fiber.child) {
+    let children = fiber.props.children;
+    let newFiber = {};
+    newFiber.parent = fiber;
+    for (let i = 0; i < children.length; i++) {
+      let temp = newFiber;
+      newFiber = {
+        type: children[i].type,
+        props: children[i].props,
+        parent: fiber,
+        sibling: null,
+        child: null,
+      }
+      if (i > 0) {
+        temp.sibling = newFiber;
+      } else {
+        fiber.child = newFiber;
+      }
+    }
   }
 
-  container.append(realNode);
+  if (fiber.child) {
+    return fiber.child;
+  }
+
+  if (fiber.sibling) {
+    return fiber.sibling
+  }
+
+  let currentFiber = fiber;
+  while (!currentFiber.sibling && currentFiber.parent) {
+    currentFiber = currentFiber.parent;
+  }
+  if (currentFiber.sibling) {
+    return currentFiber.sibling;
+  }
+
+  return null;
+}
+
+/**
+ * 任务 5: 实现 createDom（Step 4）
+ * 功能：为 fiber 创建真实 DOM 节点（但不挂载）
+ */
+function createDom(fiber) {
+  // TODO: 你的代码实现
+  let node = fiber.type === "TEXT_ELEMENT" ?
+    document.createTextElement("") :
+    document.createElement(fiber.type);
+
+  for (let key in fiber.props) {
+    if (key !== "children") {
+      node[key] = fiber.props[key];
+    }
+  }
+  return node
+}
+
+// =============== Step 5：Render & Commit（commit 阶段一次性改 DOM） ===============
+
+/**
+ * 任务 6: 实现 commitRoot（Step 5）
+ * 功能：提交整棵 fiber 树
+ */
+function commitRoot() {
+  // TODO: 你的代码实现
+}
+
+/**
+ * 任务 7: 实现 commitWork（Step 5）
+ * 功能：递归地把 fiber 对应的 DOM 挂载到页面
+ */
+function commitWork(fiber) {
+  // TODO: 你的代码实现
 }
 
 // 导出我们的 React 实现
-const myReact = {
-  createElement,
-  render
-};
+const myReact = { createElement, render };
 
 export default myReact;
