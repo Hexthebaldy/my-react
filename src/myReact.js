@@ -67,6 +67,8 @@ function createTextElement(text) {
 
 let nextUnitOfWork = null;
 let wipRoot = null;
+let currentRoot = null; // 上一次提交到 DOM 的 fiber 树（用于 reconciliation 对比）
+let deletions = null;   // 需要删除的旧 fiber 列表
 
 function workLoop(deadline) {
   // TODO: 你的代码实现
@@ -96,15 +98,14 @@ requestIdleCallback(workLoop);
  * 功能：初始化 fiber 树并启动调度
  */
 function render(element, container) {
-  // TODO: 你的代码实现
   wipRoot = {
     dom: container,
     props: { children: [element] },
     child: null,
     sibling: null,
-    parent: null
+    parent: null,
+    alternate: currentRoot,
   };
-
   nextUnitOfWork = wipRoot;
 }
 
@@ -113,48 +114,155 @@ function render(element, container) {
  * 功能：处理一个 fiber 单元，返回下一个工作单元
  */
 function performUnitOfWork(fiber) {
-  // TODO: 你的代码实现
   if (!fiber.dom) {
     fiber.dom = createDom(fiber);
   }
-  if (fiber.props.children.length && !fiber.child) {
-    let children = fiber.props.children;
-    let newFiber = {};
-    newFiber.parent = fiber;
-    for (let i = 0; i < children.length; i++) {
-      let temp = newFiber;
+
+  if (fiber.props.children.length) {
+    reconcileChildren(fiber, fiber.props.children);
+  }
+  if (fiber.sibling) {
+    return fiber.sibling;
+  }
+
+  let cur = fiber;
+  while (!cur.sibling && cur.parent) {
+    cur = cur.parent;
+  }
+  return cur.sibling;
+}
+
+// =============== Step 6：Reconciliation（新旧 fiber 对比） ===============
+
+/**
+ * 任务 8: 实现 reconcileChildren 函数
+ * 功能：对比新的 children 和旧的 fiber 树，决定如何更新 DOM
+ *
+ * 核心逻辑：同时遍历【新 children 数组】和【旧 fiber 链表（通过 oldFiber.sibling）】
+ * 对每一对 (newChild, oldFiber) 进行比较：
+ *
+ *   情况 1: type 相同 → UPDATE（复用旧 DOM，只更新 props）
+ *     - 新 fiber 的 dom 复用 oldFiber.dom
+ *     - 新 fiber 的 alternate 指向 oldFiber
+ *     - 设置 effectTag = "UPDATE"
+ *
+ *   情况 2: type 不同 且 有新元素 → PLACEMENT（需要创建新 DOM）
+ *     - 新 fiber 的 dom 为 null（之后由 performUnitOfWork 创建）
+ *     - 设置 effectTag = "PLACEMENT"
+ *
+ *   情况 3: type 不同 且 有旧 fiber → DELETION（需要删除旧 DOM）
+ *     - 给 oldFiber 设置 effectTag = "DELETION"
+ *     - 将 oldFiber 加入 deletions 数组
+ *
+ * 输入：
+ *   - wipFiber: 当前正在处理的 fiber 节点
+ *   - elements: 该节点的新 children 数组
+ *
+ * 遍历方式：
+ *   - 新 children 通过数组索引 i 遍历
+ *   - 旧 fiber 通过 oldFiber = oldFiber.sibling 遍历
+ *   - 第一个旧子 fiber 从 wipFiber.alternate?.child 获取
+ *
+ * 构建新 fiber 树的方式和之前一样：
+ *   - 第一个子 fiber → wipFiber.child = newFiber
+ *   - 后续子 fiber → prevSibling.sibling = newFiber
+ */
+function reconcileChildren(wipFiber, elements) {
+  // TODO: 你的代码实现
+  let oldFiber = nulll;
+  if (wipFiber.alternate) {
+    oldFiber = wipFiber.alternate;
+  }
+
+  if (!oldFiber) {
+    return;
+  }
+
+  let index = 0;
+  let prevSibling = null;
+
+  while (oldFiber || index < elements.length) {
+    let element = elements[i];
+    let sameType = element.type === oldFiber.type;
+    let newFiber = null;
+
+    if (sameType) {
       newFiber = {
-        type: children[i].type,
-        props: children[i].props,
-        parent: fiber,
-        sibling: null,
+        type: oldFiber.type,
+        props: element.props,
         child: null,
-      }
-      if (i > 0) {
-        temp.sibling = newFiber;
-      } else {
-        fiber.child = newFiber;
+        sibling: null,
+        parent: wipFiber,
+        effectTag: "UPDATE"
       }
     }
-  }
+    if (!sameType && element) {
+      newFiber = {
+        type: element.type,
+        props: element.props,
+        child: null,
+        sibling: null,
+        parent: wipFiber,
+        effectTag: "PLACEMENT"
+      }
+    }
 
-  if (fiber.child) {
-    return fiber.child;
-  }
+    if (!sameType && oldFiber) {
+      deletions.push(oldFiber);
+      oldFiber["effectTag"] = "DELETION"
+    }
 
-  if (fiber.sibling) {
-    return fiber.sibling
+    if (!index) {
+      prevSibling = newFiber;
+      fiber.child = newFiber;
+    } else {
+      prevSibling.sibling = newFiber;
+    }
+    index++;
+    oldFiber = oldFiber.sibling
   }
+}
 
-  let currentFiber = fiber;
-  while (!currentFiber.sibling && currentFiber.parent) {
-    currentFiber = currentFiber.parent;
-  }
-  if (currentFiber.sibling) {
-    return currentFiber.sibling;
-  }
+/**
+ * 任务 9: 修改 commitWork 函数
+ * 功能：根据 fiber 的 effectTag 决定如何操作 DOM
+ *
+ * 需要处理三种 effectTag：
+ *
+ *   "PLACEMENT" → 新增节点
+ *     - fiber.parent.dom.appendChild(fiber.dom)
+ *
+ *   "DELETION" → 删除节点
+ *     - fiber.parent.dom.removeChild(fiber.dom)
+ *     - 删除后直接 return，不需要递归子节点
+ *
+ *   "UPDATE" → 更新节点属性
+ *     - 调用 updateDom(fiber.dom, fiber.alternate.props, fiber.props)
+ *
+ * 注意：没有 effectTag 的 fiber 不需要操作 DOM
+ */
 
-  return null;
+/**
+ * 任务 10: 实现 updateDom 函数
+ * 功能：对比旧 props 和新 props，更新真实 DOM 上的属性
+ *
+ * 需要处理的情况：
+ *   1. 删除旧属性：旧 props 中有，新 props 中没有的属性 → 从 DOM 移除
+ *   2. 添加/更新属性：新 props 中有，且值与旧 props 不同的属性 → 设置到 DOM
+ *   3. 事件处理（以 "on" 开头的属性，如 onClick）：
+ *      - 移除旧事件监听器
+ *      - 添加新事件监听器
+ *      - 事件名需要转换：onClick → click（去掉 "on" 前缀并小写）
+ *   4. 跳过 children 属性（不是 DOM 属性）
+ *
+ * 输入：
+ *   - dom: 真实 DOM 节点
+ *   - prevProps: 旧的 props
+ *   - nextProps: 新的 props
+ */
+function updateDom(dom, prevProps, nextProps) {
+  // TODO: 你的代码实现
+
 }
 
 /**
@@ -182,8 +290,10 @@ function createDom(fiber) {
  * 功能：提交整棵 fiber 树
  */
 function commitRoot() {
-  // TODO: 你的代码实现
+  // 先处理需要删除的节点
+  deletions.forEach(commitWork);
   commitWork(wipRoot.child);
+  currentRoot = wipRoot; // 保存本次提交的 fiber 树，下次 render 时用于对比
   wipRoot = null;
 }
 
