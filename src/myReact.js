@@ -113,9 +113,28 @@ function render(element, container) {
 /**
  * 任务 4: 实现 performUnitOfWork（Step 4）
  * 功能：处理一个 fiber 单元，返回下一个工作单元
+ *
+ * ============ Step 6 改造：支持 Function Component ============
+ *
+ * 核心变化：判断 fiber.type 是否为函数，分发到不同的处理逻辑
+ *
+ *   if (fiber.type instanceof Function) {
+ *     updateFunctionComponent(fiber)
+ *   } else {
+ *     updateHostComponent(fiber)
+ *   }
+ *
+ * - updateHostComponent: 原来的逻辑（创建 DOM + reconcile props.children）
+ * - updateFunctionComponent: 调用函数获取 children，再 reconcile
+ *
+ * 其余返回下一个工作单元的逻辑不变。
  */
 function performUnitOfWork(fiber) {
-  if (!fiber.dom) {
+  // TODO Step 6: 根据 fiber.type 是否为函数，分发到不同处理函数
+  if (!fiber) return;
+  if (fiber.type instanceof Function) {
+    fiber.props.children = [fiber.type(fiber.props)];
+  } else if (!fiber.dom) {
     fiber.dom = createDom(fiber);
   }
 
@@ -124,17 +143,51 @@ function performUnitOfWork(fiber) {
   }
   if (fiber.child) {
     return fiber.child;
-  }
-  if (fiber.sibling) {
+  } else if (fiber.sibling) {
     return fiber.sibling;
   }
 
-  let cur = fiber;
-  while (!cur.sibling && cur.parent) {
-    cur = cur.parent;
+  while (fiber && !fiber.sibling) {
+    fiber = fiber?.parent
   }
-  return cur.sibling;
+  return fiber?.sibling;
 }
+
+// =============== Step 6：Function Components ===============
+
+/**
+ * 任务 11: 实现 updateFunctionComponent
+ * 功能：处理函数组件类型的 fiber
+ *
+ * 函数组件与普通 DOM 元素的两个关键区别：
+ *   1. 函数组件的 fiber 没有 DOM 节点（不需要 createDom）
+ *   2. children 来自于【调用函数】而非 props.children
+ *
+ * 实现步骤：
+ *   1. 调用 fiber.type(fiber.props) 执行函数组件，得到返回的子元素
+ *   2. 将返回值包装成数组 [children]
+ *   3. 调用 reconcileChildren(fiber, children) 进行协调
+ *
+ * 示例：
+ *   function App(props) { return <h1>Hi {props.name}</h1> }
+ *   // fiber.type 就是 App 函数
+ *   // fiber.type(fiber.props) 返回 h1 元素
+ */
+// function updateFunctionComponent(fiber) {
+//   // TODO: 你的代码实现
+// }
+
+/**
+ * 任务 12: 实现 updateHostComponent
+ * 功能：处理普通 DOM 元素类型的 fiber（从 performUnitOfWork 中提取出来）
+ *
+ * 逻辑与之前一致：
+ *   1. 如果 fiber 没有 dom，调用 createDom 创建
+ *   2. 调用 reconcileChildren(fiber, fiber.props.children)
+ */
+// function updateHostComponent(fiber) {
+//   // TODO: 你的代码实现
+// }
 
 // =============== Step 6：Reconciliation（新旧 fiber 对比） ===============
 
@@ -215,11 +268,12 @@ function reconcileChildren(wipFiber, elements) {
     }
 
     if (!index) {
-      prevSibling = newFiber;
       wipFiber.child = newFiber;
     } else {
       prevSibling.sibling = newFiber;
     }
+    prevSibling = newFiber;
+
     index++;
     oldFiber = oldFiber?.sibling
   }
@@ -312,11 +366,7 @@ function createDom(fiber) {
     document.createTextNode("") :
     document.createElement(fiber.type);
 
-  for (let key in fiber.props) {
-    if (key !== "children") {
-      node[key] = fiber.props[key];
-    }
-  }
+  updateDom(node, {}, fiber.props);
   return node
 }
 
@@ -341,25 +391,78 @@ function commitRoot() {
 function commitWork(fiber) {
   // TODO: 你的代码实现
   if (!fiber) return;
-  let parentDom = null
-  if (fiber.parent) {
-    parentDom = fiber.parent.dom;
-  }
 
-  if (fiber.effectTag === "PLACEMENT") {
+  /**
+   * ============ Step 6 改造点 1：查找父 DOM 节点 ============
+   *
+   * 问题：函数组件的 fiber 没有 dom，所以 fiber.parent.dom 可能为 null
+   * 解决：向上遍历 fiber 树，直到找到一个有 dom 的祖先节点
+   *
+   * 原来：let parentDom = fiber.parent.dom
+   * 改为：
+   *   let domParentFiber = fiber.parent
+   *   while (!domParentFiber.dom) {
+   *     domParentFiber = domParentFiber.parent
+   *   }
+   *   let parentDom = domParentFiber.dom
+   */
+  let parentFiber = fiber?.parent;
+  while (parentFiber && !parentFiber.dom) {
+    parentFiber = parentFiber?.parent;
+  }
+  let parentDom = parentFiber.dom
+
+
+  if (fiber.effectTag === "PLACEMENT" && fiber.dom != null) {
+    // Step 6 注意：函数组件 fiber 没有 dom，需要加 fiber.dom != null 守卫
     parentDom.append(fiber.dom);
   }
-  if (fiber.effectTag === "UPDATE") {
+  if (fiber.effectTag === "UPDATE" && fiber.dom != null) {
     updateDom(fiber.dom, fiber.alternate.props, fiber.props);
   }
+
+  /**
+   * ============ Step 6 改造点 2：删除节点 ============
+   *
+   * 问题：函数组件 fiber 自身没有 dom，直接 removeChild 会失败
+   * 解决：递归向下找到第一个有 dom 的子 fiber，再删除它
+   *
+   * 原来：parentDom.removeChild(fiber.dom)
+   * 改为：调用 commitDeletion(fiber, parentDom)
+   *
+   * 任务 13: 实现 commitDeletion(fiber, domParent)
+   *   if (fiber.dom) {
+   *     domParent.removeChild(fiber.dom)
+   *   } else {
+   *     commitDeletion(fiber.child, domParent)
+   *   }
+   */
   if (fiber.effectTag === "DELETION") {
-    parentDom.removeChild(fiber.dom);
+    let q = fiber;
+    if (!q.dom) {
+      while (q && !q.dom) {
+        q = q.child;
+      }
+    }
+    parentDom.removeChild(q.dom);
     return;
   }
 
   commitWork(fiber.child);
   commitWork(fiber.sibling);
 }
+
+/**
+ * 任务 13: 实现 commitDeletion
+ * 功能：递归查找有真实 DOM 的子节点并删除
+ *
+ * 为什么需要这个函数？
+ * 当删除一个函数组件时，该 fiber 没有 dom 属性，
+ * 需要一直往 child 方向找，直到找到一个有 dom 的 fiber，然后删除它。
+ */
+// function commitDeletion(fiber, domParent) {
+//   // TODO: 你的代码实现
+// }
 
 // 导出我们的 React 实现
 const myReact = { createElement, render };
