@@ -90,7 +90,39 @@ export class myPromise {
             throw value;
         })
     }
+
+    static resolve(val) {
+        if (val instanceof myPromise) return val;
+        return new myPromise((resolve, reject) => {
+            resolve(val);
+        })
+    }
+
+    static reject(rea) {
+        return new myPromise((resolve, reject) => {
+            reject(rea)
+        })
+    }
+
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // ========== 测试用例 ==========
 // 请先自己分析每一步的输出顺序和值，再运行验证
