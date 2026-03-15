@@ -91,6 +91,24 @@ export class myPromise {
         })
     }
 
+    static all(arr) {
+        return new myPromise((resolve, reject) => {
+            let res = new Array(arr.length).fill(null);
+            let count = 0;
+            for (let i = 0; i < arr.length; i++) {
+                arr[i].then((val) => {
+                    res[i] = val
+                    count++;
+                    if (count === arr.length) {
+                        resolve(res);
+                    }
+                }, (reason) => {
+                    reject(reason);
+                })
+            }
+        })
+    }
+
     static resolve(val) {
         if (val instanceof myPromise) return val;
         return new myPromise((resolve, reject) => {
