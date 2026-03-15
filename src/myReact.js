@@ -36,6 +36,8 @@ let nextUnitOfWork = null;
 let wipRoot = null;
 let currentRoot = null; // 上一次提交到 DOM 的 fiber 树（用于 reconciliation 对比）
 let deletions = null;   // 需要删除的旧 fiber 列表
+let wipFiber = null;    // 当前正在处理的函数组件 fiber
+let hookIndex = null;   // 当前 hook 索引
 
 function workLoop(deadline) {
   let shouldStop = false;
@@ -71,6 +73,9 @@ function render(element, container) {
 function performUnitOfWork(fiber) {
   if (!fiber) return;
   if (fiber.type instanceof Function) {
+    wipFiber = fiber;
+    hookIndex = 0;
+    wipFiber.hooks = [];
     fiber.props.children = [fiber.type(fiber.props)];
   } else if (!fiber.dom) {
     fiber.dom = createDom(fiber);
@@ -211,7 +216,6 @@ function commitWork(fiber) {
   }
   let parentDom = parentFiber.dom
 
-
   if (fiber.effectTag === "PLACEMENT" && fiber.dom != null) {
     parentDom.append(fiber.dom);
   }
@@ -233,6 +237,41 @@ function commitWork(fiber) {
   commitWork(fiber.sibling);
 }
 
-const myReact = { createElement, render };
+function useState(initial) {
+  const oldHook = wipFiber.alternate?.hooks?.[hookIndex];
+
+  const hook = {
+    state: oldHook ? oldHook.state : initial,
+    queue: [],
+  };
+
+  // 执行上一轮积攒的 setState 动作
+  if (oldHook) {
+    oldHook.queue.forEach(action => {
+      hook.state = action instanceof Function ? action(hook.state) : action;
+    });
+  }
+
+  const setState = action => {
+    hook.queue.push(action);
+    // 触发重新渲染，和 render() 做的事一样
+    wipRoot = {
+      dom: currentRoot.dom,
+      props: currentRoot.props,
+      child: null,
+      sibling: null,
+      parent: null,
+      alternate: currentRoot,
+    };
+    deletions = [];
+    nextUnitOfWork = wipRoot;
+  };
+
+  wipFiber.hooks.push(hook);
+  hookIndex++;
+  return [hook.state, setState];
+}
+
+const myReact = { createElement, render, useState };
 
 export default myReact;
