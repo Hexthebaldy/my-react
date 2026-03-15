@@ -53,11 +53,22 @@ mountApp();
 // let p2 = "I'm too old school ...";
 // let element = myReact.createElement("div", { id: "114514_beast_senpai" }, p1, p2);
 
-let element = (
-  <div id="114514_beast_senpai">
-    <p>Using jsx to create dom tree</p><p>I'm too new wave ...</p>
-  </div>
-)
+function Counter() {
+  const [count, setCount] = myReact.useState(0);
+  const [name, setName] = myReact.useState("world");
+
+  return (
+    <div>
+      <h1>Hello {name}</h1>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(c => c + 1)}>+1</button>
+      <button onClick={() => setCount(c => c - 1)}>-1</button>
+      <button onClick={() => setName(name === "world" ? "React" : "world")}>
+        toggle name
+      </button>
+    </div>
+  );
+}
 
 let root = document.getElementById("root");
-myReact.render(element, root);
+myReact.render(<Counter />, root);
