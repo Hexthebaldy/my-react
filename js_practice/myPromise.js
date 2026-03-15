@@ -54,20 +54,24 @@ export class myPromise {
             }
             if (this.state === "pending") {
                 this.successCallbackList.push(() => {
-                    try {
-                        const res = successCallback(this.value);
-                        resolve(res);
-                    } catch (err) {
-                        reject(err);
-                    }
+                    queueMicrotask(() => {
+                        try {
+                            const res = successCallback(this.value);
+                            resolve(res);
+                        } catch (err) {
+                            reject(err);
+                        }
+                    })
                 })
                 this.failCallbackList.push(() => {
-                    try {
-                        const rea = failCallback(this.reason);
-                        resolve(rea);
-                    } catch (err) {
-                        reject(err);
-                    }
+                    queueMicrotask(() => {
+                        try {
+                            const rea = failCallback(this.reason);
+                            resolve(rea);
+                        } catch (err) {
+                            reject(err);
+                        }
+                    })
                 })
             }
         })
@@ -87,3 +91,40 @@ export class myPromise {
         })
     }
 }
+
+// ========== 测试用例 ==========
+// 请先自己分析每一步的输出顺序和值，再运行验证
+
+const p = new myPromise((resolve, reject) => {
+    console.log("1");
+    setTimeout(() => {
+        reject("error_from_p");
+    }, 1000);
+    console.log("2");
+});
+
+p.then(val => {
+    console.log("3:", val);
+    return "result_a";
+}).then(val => {
+    console.log("4:", val);
+    throw "oops";
+}).catch(err => {
+    console.log("5:", err);
+    return "recovered";
+}).then(val => {
+    console.log("6:", val);
+}).finally(() => {
+    console.log("7: finally");
+});
+
+p.catch(err => {
+    console.log("8:", err);
+    return 42;
+}).then(val => {
+    console.log("9:", val);
+});
+
+console.log("10");
+
+//ans: 1, 2, 10, 8: error_from_p, 9: 42, 5:error_from_p, 6: recovered, 7:finally
