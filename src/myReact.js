@@ -69,7 +69,6 @@ function render(element, container) {
 }
 
 function performUnitOfWork(fiber) {
-  // TODO Step 6: 根据 fiber.type 是否为函数，分发到不同处理函数
   if (!fiber) return;
   if (fiber.type instanceof Function) {
     fiber.props.children = [fiber.type(fiber.props)];
@@ -93,7 +92,6 @@ function performUnitOfWork(fiber) {
 }
 
 function reconcileChildren(wipFiber, elements) {
-  // TODO: 你的代码实现
   let oldFiber = null;
   if (wipFiber.alternate) {
     oldFiber = wipFiber.alternate.child;
