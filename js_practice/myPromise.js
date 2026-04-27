@@ -1,4 +1,4 @@
-export class myPromise {
+class myPromise {
     constructor(excutor) {
         this.state = "pending";
         this.value = null;
@@ -7,6 +7,10 @@ export class myPromise {
         this.failCallbackList = [];
 
         const resolve = (value) => {
+            if (value instanceof myPromise) {
+                value.then(resolve, reject);
+                return;
+            }
             if (this.state !== "pending") return;
             this.state = "fulfilled";
             this.value = value;
@@ -85,9 +89,9 @@ export class myPromise {
         return this.then(value => {
             cb();
             return value;
-        }, value => {
+        }, reason => {
             cb();
-            throw value;
+            throw reason;
         })
     }
 
@@ -142,39 +146,83 @@ export class myPromise {
 
 
 
-// ========== 测试用例 ==========
+// ========== Quiz 1 ==========
 // 请先自己分析每一步的输出顺序和值，再运行验证
 
-const p = new myPromise((resolve, reject) => {
-    console.log("1");
-    setTimeout(() => {
-        reject("error_from_p");
-    }, 1000);
-    console.log("2");
+// const p = new myPromise((resolve, reject) => {
+//     console.log("1");
+//     setTimeout(() => {
+//         reject("error_from_p");
+//     }, 1000);
+//     console.log("2");
+// });
+
+// p.then(val => {
+//     console.log("3:", val);
+//     return "result_a";
+// }).then(val => {
+//     console.log("4:", val);
+//     throw "oops";
+// }).catch(err => {
+//     console.log("5:", err);
+//     return "recovered";
+// }).then(val => {
+//     console.log("6:", val);
+// }).finally(() => {
+//     console.log("7: finally");
+// });
+
+// p.catch(err => {
+//     console.log("8:", err);
+//     return 42;
+// }).then(val => {
+//     console.log("9:", val);
+// });
+
+// console.log("10");
+
+//ans: 1, 2, 10, 8: error_from_p, 9: 42, 5:error_from_p, 6: recovered, 7:finally
+
+
+// ========== Quiz 2 ==========
+// 写出输出顺序和每一步的值
+
+//tq: 
+//mtq: 1: start / 2:myPromise.reject("fail_" + val) /  
+console.log("============ Quiz 2 ===============")
+
+const q1 = myPromise.resolve("start");
+
+const q2 = myPromise.reject("boom");
+
+q1.then(val => {
+    console.log("1:", val);
+    return myPromise.reject("fail_" + val); // fail_start
+}).then(val => { // val = myPromise.reject("fail_" + val)
+    console.log("2:", val);
+    //返回的promise在myPromise.reject("fail_"+val)中被reject，reason = fail_start
+}).catch(err => {
+    console.log("3:", err); // 
+    return myPromise.resolve("fixed");
+}).then(val => {//val = myPromise.resolve("fixed");
+    console.log("4:", val);
 });
 
-p.then(val => {
-    console.log("3:", val);
-    return "result_a";
-}).then(val => {
-    console.log("4:", val);
-    throw "oops";
-}).catch(err => {
+q2.catch(err => {
     console.log("5:", err);
-    return "recovered";
+    return err + "_caught";
 }).then(val => {
     console.log("6:", val);
+    throw "again";
+}).catch(err => {
+    console.log("7:", err);
+    return myPromise.resolve("done");
 }).finally(() => {
-    console.log("7: finally");
-});
-
-p.catch(err => {
-    console.log("8:", err);
-    return 42;
+    console.log("8: cleanup");
 }).then(val => {
     console.log("9:", val);
 });
 
-console.log("10");
+console.log("10: sync");
 
-//ans: 1, 2, 10, 8: error_from_p, 9: 42, 5:error_from_p, 6: recovered, 7:finally
+//ans: 10: sync, 
