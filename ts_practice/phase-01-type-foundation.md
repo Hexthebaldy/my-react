@@ -117,24 +117,67 @@ function add(a: number, b: number): number {
 }
 ```
 
-## 五、类型断言：你在向编译器宣示主权
+## 五、类型断言：编译期"宣示主权"
+
+### 5.1 它在做什么
+
+类型断言告诉编译器"这个值的类型按我说的算"——是**纯编译时**指令，**不改变运行时的值**。
 
 ```ts
 const el = document.querySelector('#app') as HTMLDivElement
 const id = (event.target as HTMLInputElement).value
 ```
 
-**断言的两种语法**：
-- `value as Type` — JSX 中**只能用这种**
-- `<Type>value` — 不推荐，与 JSX 冲突
+类比：你工资单上写"P7"，但实际能力还是实际能力——断言只让 TS 闭嘴，错了运行时照样炸。
 
-**断言不是类型转换**！它不会改变运行时行为，只是让编译器闭嘴。如果你断言错了，运行时照样炸。
+### 5.2 两种语法
+- `value as Type` — 推荐，JSX 里**只能用这种**
+- `<Type>value` — 老语法，与 JSX 冲突
 
-**双重断言（逃生通道）**：
+### 5.3 断言不是转换（必懂）
+
 ```ts
-const x = (someValue as unknown) as TargetType  // 完全不相关类型间的强转
+const n = ('42' as unknown) as number
+typeof n            // 'string'  ← 实际还是字符串！
+n + 1               // '421'     ← 字符串拼接，不是 43
 ```
-出现这种代码就是设计有问题，应当作为最后手段。
+
+要真正改变值，用运行时函数：`Number(x)` / `String(x)` / `Boolean(x)`。
+
+### 5.4 兼容性规则与双重断言
+
+```ts
+const a: string = 'hi'
+const b = a as 'hi' | 'bye'   // ✅ 收窄到子类型
+const c = a as number         // ❌ 不兼容，编译器拦截
+```
+
+要强转毫不相关的类型，需要双重断言绕过：
+
+```ts
+const x = (someValue as unknown) as TargetType
+```
+
+**出现 `as unknown as X` 通常意味着设计有问题**——它完全关闭了类型保护，作为最后手段。
+
+### 5.5 优先用类型守卫替代
+
+绝大多数 `as` 都有更安全的写法：
+
+```ts
+// ❌ 断言
+function getValue(target: EventTarget | null) {
+  return (target as HTMLInputElement).value
+}
+
+// ✅ 守卫（编译时和运行时都安全）
+function getValue(target: EventTarget | null) {
+  if (target instanceof HTMLInputElement) return target.value
+  return ''
+}
+```
+
+**断言 = 向编译器宣示主权；守卫 = 向编译器证明事实**。能用守卫就别用断言。
 
 ## 六、非空断言 `!`
 
@@ -155,19 +198,88 @@ function getLength(s: string | null): number {
 
 ## 七、const 断言（很重要，常被低估）
 
+### 7.1 类型宽化：为什么需要 as const
+
+TS 推断时会把字面量"扩宽"成它的父类型：
+
 ```ts
-const config1 = { url: '/api', method: 'GET' }
-// 推断: { url: string; method: string }
-
-const config2 = { url: '/api', method: 'GET' } as const
-// 推断: { readonly url: '/api'; readonly method: 'GET' }
-
-// 实战：派生类型
-const ROUTES = ['/home', '/about', '/contact'] as const
-type Route = typeof ROUTES[number]  // '/home' | '/about' | '/contact'
+let a = 'hello'              // string         ← 宽化
+const b = 'hello'            // 'hello'        ← 不宽化
+const c = { x: 'hello' }     // { x: string }  ← 又宽化
 ```
 
-`as const` 是从值派生类型的桥梁，后面阶段会大量用到。
+`const` 只锁"指向"，不锁内部——所以对象属性、数组元素仍然会被宽化。这导致两个常见痛点：
+
+```ts
+// 痛点 1：函数要字面量，但对象属性推成了宽类型
+function setMethod(m: 'GET' | 'POST') {}
+const config = { method: 'GET' }
+setMethod(config.method)          // ❌ string 不能赋给 'GET' | 'POST'
+
+// 痛点 2：从数组派生 union 时丢了字面量信息
+const colors = ['red', 'green']
+type Color = typeof colors[number]   // string  ← 期望是 'red' | 'green'
+```
+
+### 7.2 as const 三连封印
+
+加在字面量后面，一次性做三件事：
+
+1. **属性变 readonly**
+2. **字面量类型不再宽化**
+3. **数组变只读元组**
+
+```ts
+const config = { url: '/api', method: 'GET' } as const
+// { readonly url: '/api'; readonly method: 'GET' }
+
+const colors = ['red', 'green'] as const
+// readonly ['red', 'green']    ← 不再是 string[]
+```
+
+效果是递归的，嵌套对象/数组也一起锁。
+
+### 7.3 核心用法：从值派生类型
+
+`as const` 让一份值同时充当**类型字典的源头**——避免值和类型重复维护。三个固定套路（背下来）：
+
+```ts
+// 套路 1：数组 → union
+const COLORS = ['red', 'green', 'blue'] as const
+type Color = typeof COLORS[number]    // 'red' | 'green' | 'blue'
+
+// 套路 2：对象键 → union
+const ROLE = { ADMIN: 'admin', USER: 'user' } as const
+type RoleKey = keyof typeof ROLE      // 'ADMIN' | 'USER'
+
+// 套路 3：对象值 → union
+type RoleValue = typeof ROLE[keyof typeof ROLE]   // 'admin' | 'user'
+```
+
+> `keyof` 和 `T[K]` 是 Phase 4 才系统讲，这里先记住组合套路。
+
+### 7.4 实战：状态机判别字段
+
+```ts
+const a1 = { type: 'LOGIN', userId: 1 }            // a1.type: string
+const a2 = { type: 'LOGIN', userId: 1 } as const   // a2.type: 'LOGIN'  ← 可作判别
+```
+
+Redux / Zustand / XState 等所有状态库都依赖这个技巧让 `type` 字段保留字面量。
+
+### 7.5 编译时 vs 运行时
+
+`as const` 只在编译时生效，运行时仍可被断言绕过去：
+
+```ts
+const obj = { x: 1 } as const
+const sneaky = obj as { x: number }
+sneaky.x = 2                  // 运行时真改了
+```
+
+要真正运行时不可变，需要 `Object.freeze`。两者职责不同：`as const` 是编译时类型守门员，`Object.freeze` 是运行时锁。
+
+**`as const` 是从值派生类型的桥梁**——这一句话在 Phase 4-5 会反复用到。
 
 ---
 
