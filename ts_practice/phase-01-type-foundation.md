@@ -33,60 +33,190 @@ let undef: undefined = undefined
 - `number` 包含 `NaN` 和 `Infinity`（运行时陷阱仍然存在，TS 不解决这些）
 - `null` 和 `undefined` 是各自独立的类型，开启 `strictNullChecks` 后不能互相赋值
 
-## 二、顶/底/单元类型（重点）
+## 二、几个特殊类型：any / unknown / never / void
 
-| 类型 | 说明 | 何时用 |
+除了原始类型之外，TS 有几个**特殊类型**——它们不对应任何 JS 里的具体值，是 TS 自己设计出来表达"特殊语义"的。这些是 TS 学习中的关键概念，必须吃透。
+
+### 2.1 速查表
+
+| 类型 | 一句话理解 | 何时用 |
 |---|---|---|
-| `any` | 关闭类型检查，万能 | **避免使用**；迁移老代码时临时挡一下 |
-| `unknown` | 类型安全的 any，必须收窄后才能用 | 处理外部输入（API 响应、`JSON.parse`） |
-| `never` | 永不存在的值（抛错、死循环） | 穷尽性检查、不可达分支 |
-| `void` | 函数没有返回值 | 函数返回值注解 |
-| `object` | 任何非原始类型 | 很少用，通常用具体接口代替 |
+| `any` | "我放弃类型检查了" | **避免使用**；老代码迁移临时用 |
+| `unknown` | "我不知道是啥，先得证明" | 处理外部输入（API、`JSON.parse`） |
+| `never` | "永远不会有这个值" | 穷尽性检查、抛错函数的返回值 |
+| `void` | "函数没返回值" | 函数返回值注解 |
+| `object` | "任何非原始类型" | 很少用，通常用具体接口替代 |
 
-**`unknown` vs `any` 的关键区别**：
+下面挑最重要的两个详细讲。
+
+### 2.2 `any` vs `unknown`（最容易混的两个）
+
+两者都表示"什么都行"，但语义完全不同：
+
 ```ts
 const a: any = JSON.parse(input)
-a.foo.bar  // 编译通过，运行时炸
+a.foo.bar.baz       // 编译通过，运行时可能直接炸
+a()                 // 编译通过，运行时也许炸
+a + 1               // 编译通过
 
 const b: unknown = JSON.parse(input)
-b.foo.bar  // ❌ 编译报错：必须先收窄
+b.foo               // ❌ 编译报错：unknown 上没东西
+b()                 // ❌
+b + 1               // ❌
+```
+
+**核心区别**：
+- `any` = "**关掉**类型检查"——你想干嘛干嘛，TS 不管
+- `unknown` = "**先证明**给我看"——必须经过类型守卫收窄成具体类型，才能用
+
+`unknown` 的"必须先证明"是这样实现的：
+
+```ts
+const b: unknown = JSON.parse(input)
+
+if (typeof b === 'string') {
+  b.toUpperCase()        // ✅ 这一段里 b 被收窄成 string
+}
+
 if (typeof b === 'object' && b !== null && 'foo' in b) {
-  // 这里 b 才安全
+  b.foo                  // ✅ 这里编译器知道 b 上有 foo
 }
 ```
 
-**`never` 的经典用法 — 穷尽性检查**：
-```ts
-type Shape = { kind: 'circle'; r: number } | { kind: 'square'; s: number }
+**实战建议**：处理外部数据（API 响应、用户输入、JSON.parse）一律用 `unknown`，强迫自己写运行时校验。`any` 几乎永远不该用——一旦用了，类型保护全失效。
 
-function area(s: Shape) {
+### 2.3 `never`：永不存在的值
+
+`never` 表示"这个位置不可能有任何值"——比 `null`/`undefined` 还要"虚无"。
+
+#### 它在哪里自然出现
+
+```ts
+// 1. 函数永远抛错（不会正常返回）
+function panic(msg: string): never {
+  throw new Error(msg)
+}
+
+// 2. 死循环（永不结束）
+function loop(): never {
+  while (true) {}
+}
+
+// 3. 类型层"减法"的结果
+type X = string & number    // never，因为没有值同时是 string 和 number
+```
+
+#### 经典实战：穷尽性检查（exhaustive check）
+
+这是 `never` 最重要的用法——**让编译器帮你防止"漏处理某种情况"**。
+
+假设你有个表示形状的联合类型，写一个计算面积的函数：
+
+```ts
+type Shape =
+  | { kind: 'circle'; r: number }
+  | { kind: 'square'; s: number }
+
+function area(s: Shape): number {
   switch (s.kind) {
     case 'circle': return Math.PI * s.r ** 2
     case 'square': return s.s ** 2
     default:
-      const _exhaustive: never = s  // 新加 kind 时这里会报错，强制处理
+      const _exhaustive: never = s    // ✨ 关键的一行
       return _exhaustive
   }
 }
 ```
 
-## 三、字面量类型与 union（取代 enum 的现代方案）
+**这一行 `const _exhaustive: never = s` 在做什么？**
+
+把它拆开：
+- 走到 `default` 分支说明 `s.kind` 不是 `'circle'` 也不是 `'square'`
+- TS 经过前面 case 的收窄，认为 `s` 此时是 "Shape 中除了 circle 和 square 的所有可能"
+- 如果 Shape 只有这两种，TS 推断 `s` 此时是 `never`（不可能再有别的）
+- 把一个 `never` 类型赋给 `_exhaustive: never` → ✅ 编译通过
+
+**关键来了**——如果你**未来**给 Shape 加了新成员：
 
 ```ts
-// 比 enum 更好：字面量 union
-type Direction = 'up' | 'down' | 'left' | 'right'
-type DiceRoll = 1 | 2 | 3 | 4 | 5 | 6
-
-function move(dir: Direction) { /* ... */ }
-move('up')      // ✅
-move('north')   // ❌
+type Shape =
+  | { kind: 'circle'; r: number }
+  | { kind: 'square'; s: number }
+  | { kind: 'triangle'; a: number; h: number }   // ← 新加的
 ```
 
-**为什么字面量 union 优于 enum**：
-- 编译后零运行时开销（enum 会生成对象）
-- 与字符串无缝互通
-- 可被 `keyof`、模板字面量类型组合派生
-- TS 5+ 中 enum 有一些争议（`const enum` 在 isolated module 下还有兼容问题）
+`area` 函数没改，TS 立刻在 `_exhaustive` 那行报错：
+
+```
+Type '{ kind: "triangle"; ... }' is not assignable to type 'never'
+```
+
+**编译器逼你回去把 triangle 这个 case 处理掉**——这就是穷尽性检查的威力：用类型系统强制保证"所有可能都被处理"。
+
+写状态机、Redux reducer、消息分发器时这个模式非常重要，值得形成肌肉记忆。
+
+## 三、字面量类型与 union（取代 enum 的现代方案）
+
+### 3.1 什么是字面量类型
+
+普通类型描述的是**一类值**，字面量类型描述的是**一个值**：
+
+```ts
+let a: string = 'hello'        // string —— 任意字符串都行
+let b: 'hello' = 'hello'       // 字面量类型 —— 只能是 'hello'，别的不行
+
+b = 'world'                    // ❌ Type '"world"' is not assignable to type '"hello"'
+```
+
+单看一个字面量类型没什么用——它的威力来自和 `|`（union）组合。
+
+### 3.2 字面量 union：表达"有限取值"
+
+```ts
+type Direction = 'up' | 'down' | 'left' | 'right'   // 字符串字面量 union
+type DiceRoll = 1 | 2 | 3 | 4 | 5 | 6                // 数字字面量 union
+
+function move(dir: Direction) { /* ... */ }
+move('up')        // ✅
+move('north')     // ❌ 编译时拦截
+```
+
+这就替代了 JS 里没有的"枚举"概念——比写一堆字符串常量安全得多。
+
+### 3.3 为什么字面量 union 比 enum 好
+
+TS 也有 `enum` 关键字，但**社区主流共识是优先用字面量 union**：
+
+```ts
+// 写法 A：enum（不推荐）
+enum Status { Idle = 'idle', Loading = 'loading', Done = 'done' }
+
+// 写法 B：字面量 union（推荐）
+type Status = 'idle' | 'loading' | 'done'
+```
+
+**为什么倾向 B**：
+
+- **零运行时开销**：enum 编译后会生成一个对象，union 完全没有运行时产物
+- **更好的工具链兼容**：现代打包器（esbuild/SWC）对 `const enum` 处理有兼容问题
+- **更易组合**：union 能配合后面的 `keyof`、模板字面量等做精妙派生（Phase 5 详解）
+- **直接和字符串/数字互通**：不需要 `Status.Loading` 这种额外语法
+
+> 不需要现在记住所有理由——只要"默认用字面量 union，少用 enum"就行。
+
+### 3.4 字面量类型怎么"自动出现"
+
+很多时候你不用手写字面量类型——TS 在某些情况下自动推：
+
+```ts
+let a = 'hello'          // a: string         （let 推宽）
+const b = 'hello'        // b: 'hello'        （const 推窄）
+
+const arr = ['red', 'green']            // arr: string[]    ← 注意还是宽
+const arr2 = ['red', 'green'] as const  // arr2: readonly ['red', 'green']
+```
+
+为什么 `let` 和 `const` 不一样？因为 `let` 后面可能改、`const` 不会。这就是下一节的"宽化"问题——加 `as const` 是关键工具。
 
 ## 四、类型推断（inference）— 最常被忽视的能力
 
@@ -181,20 +311,30 @@ function getValue(target: EventTarget | null) {
 
 ## 六、非空断言 `!`
 
-```ts
-function getLength(s: string | null): number {
-  return s!.length  // 我保证 s 不是 null
-}
-```
-
-和 `as` 一样，是你在用人格担保。**优先用类型守卫**：
+`!` 是 `as` 的一个特化版本——专门用来告诉编译器"这个值此刻一定不是 null/undefined"：
 
 ```ts
 function getLength(s: string | null): number {
-  if (s === null) return 0
-  return s.length  // 这里编译器自动收窄成 string
+  return s!.length          // ! 表示"我保证 s 不是 null"
 }
 ```
+
+它等价于 `(s as NonNullable<typeof s>)`，但是写起来短得多。
+
+**和 `as` 一样的注意事项**：
+- 只在编译时生效，错了运行时照样炸
+- 是你在用"人格担保"——TS 完全不验证
+
+**绝大多数情况优先用类型守卫**：
+
+```ts
+function getLength(s: string | null): number {
+  if (s === null) return 0    // 显式处理 null
+  return s.length              // 这里 s 自动收窄成 string，不用 !
+}
+```
+
+只在那种"代码上下文逻辑保证不为 null，但 TS 不够聪明推不出来"的场景才用 `!`。能用守卫就别用 `!`。
 
 ## 七、const 断言（很重要，常被低估）
 
