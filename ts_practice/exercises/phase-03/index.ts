@@ -41,3 +41,9 @@ export class Rectangle extends Shape{
         return this.width*this.height;
     }
 }
+
+export function instantiate<T, A extends any[]>(C:new (...args:A)=>T, ...args:A):T{
+    return new C(...args);
+}
+
+let circleA = instantiate(Circle,3)
