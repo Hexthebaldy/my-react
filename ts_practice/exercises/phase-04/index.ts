@@ -53,6 +53,15 @@ export function isUser(obj:unknown): obj is User{
     return false
 }
 
-export function merge<A extends Object,B extends Object>(a:A,b:B){
+export function merge<A extends object,B extends object>(a:A,b:B){
     return {...a,...b}
 }
+
+const ROUTES = {
+  home: '/',
+  about: '/about',
+  profile: (id: number) => `/profile/${id}`,
+} as const
+
+type RouteName = keyof typeof ROUTES;
+type RouteValue = typeof ROUTES[keyof typeof ROUTES];
