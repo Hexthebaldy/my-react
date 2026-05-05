@@ -53,3 +53,6 @@ export function isUser(obj:unknown): obj is User{
     return false
 }
 
+export function merge<A extends Object,B extends Object>(a:A,b:B){
+    return {...a,...b}
+}
