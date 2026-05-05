@@ -40,3 +40,16 @@ export function setState<T,E>(s:AsyncState<T,E>,action:(s:AsyncState<T,E>)=>{}):
     action(s);
     return s;
 }
+
+export interface User{
+    id:number,
+    name:string
+}
+
+export function isUser(obj:unknown): obj is User{
+    if(obj instanceof Object && 'id' in obj && 'name' in obj){
+        if(typeof obj.id === 'number' && typeof obj.name === 'string') return true;
+    }
+    return false
+}
+
